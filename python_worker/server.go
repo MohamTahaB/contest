@@ -14,6 +14,7 @@ type WorkerServer struct {
 	router *gin.Engine
 }
 
+// Returns a pointer to a WorkerServer instance, or an error if encountered.
 func Init() (*WorkerServer, error) {
 	if err := buildSandbox(); err != nil {
 		return nil, fmt.Errorf("error initiating Python WorkerServer: %w", err)
@@ -26,44 +27,6 @@ func Init() (*WorkerServer, error) {
 
 func (ws *WorkerServer) Run() {
 	ws.router.Run(":8081")
-}
-
-func execSubmission(ps *utils.ProblemSubmission) (*utils.ExecutionOutput, error) {
-	commandArgs := []string{
-		"docker",
-		"run",
-		"-i",
-		"--rm",
-		"--cpus=0.5",
-		fmt.Sprintf("--memory=%dm", ps.MemoryLimit),
-		"python-sandbox",
-		"sh",
-		"-c",
-		fmt.Sprintf("prlimit --cpu=%d -- python -", ps.TimeLimit),
-	}
-
-	cmd := exec.Command("sudo", commandArgs...)
-
-	output := utils.ExecutionOutput{}
-
-	cmd.Stdout = &output.Stdout
-	cmd.Stderr = &output.Stderr
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	io.WriteString(stdin, fmt.Sprintf("%s", ps.Submission))
-	stdin.Close()
-
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	output.ExitCode = cmd.ProcessState.ExitCode()
-
-	return &output, nil
 }
 
 func router() *gin.Engine {
@@ -104,8 +67,46 @@ func router() *gin.Engine {
 	return router
 }
 
+func execSubmission(ps *utils.ProblemSubmission) (*utils.ExecutionOutput, error) {
+	commandArgs := []string{
+		"run",
+		"-i",
+		"--rm",
+		"--cpus=0.5",
+		fmt.Sprintf("--memory=%dm", ps.MemoryLimit),
+		"python-sandbox",
+		"sh",
+		"-c",
+		fmt.Sprintf("prlimit --cpu=%d -- python -", ps.TimeLimit),
+	}
+
+	cmd := exec.Command("docker", commandArgs...)
+
+	output := utils.ExecutionOutput{}
+
+	cmd.Stdout = &output.Stdout
+	cmd.Stderr = &output.Stderr
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+
+	io.WriteString(stdin, fmt.Sprintf("%s", ps.Submission))
+	stdin.Close()
+
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	output.ExitCode = cmd.ProcessState.ExitCode()
+
+	return &output, nil
+}
+
+// Builds the sandbox image, returns an error if encountered.
 func buildSandbox() error {
-	cmd := exec.Command("sudo", "docker", "build", "-t", "python-sandbox", ".")
+	cmd := exec.Command("docker", "build", "-t", "python-sandbox", ".")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("error building python sandbox docker image: %w", err)
 	}
